@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "complete",
+      "name": "shortik",
       "dependencies": {
         "jsonwebtoken": "^9.0.2",
       },
