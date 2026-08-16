@@ -1,6 +1,8 @@
 import { randomUUID } from "crypto";
 import type { Database } from "bun:sqlite";
 
+// A holovak = one clip: its metadata lives here, the thumbnail and the video file
+// are stored elsewhere and only referenced by URL.
 export type Holovak = {
   id: string;
   createdAt: Date;
@@ -24,88 +26,14 @@ type HolovakRow = {
   updated_at: string;
   title: string;
   description: string;
-  thumbnail_url?: string;
-  video_url?: string;
+  thumbnail_url: string | null;
+  video_url: string | null;
   user_id: string;
 };
 
-export function getHolovakner(db: Database, userID: string): Holovak[] {
-  const sql = `
-    SELECT
-      id,
-      created_at,
-      updated_at,
-      title,
-      description,
-      thumbnail_url,
-      video_url,
-      user_id
-    FROM holovakner
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-  `;
+const COLUMNS = "id, created_at, updated_at, title, description, thumbnail_url, video_url, user_id";
 
-  const rows = db.query<HolovakRow, [string]>(sql).all(userID);
-
-  const holovakner: Holovak[] = rows.map((row) => ({
-    id: row.id,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
-    title: row.title,
-    description: row.description,
-    thumbnailURL: row.thumbnail_url,
-    videoURL: row.video_url,
-    userID: row.user_id,
-  }));
-
-  return holovakner;
-}
-
-export function createHolovak(
-  db: Database,
-  params: CreateHolovakParams,
-): Holovak | undefined {
-  const id = randomUUID();
-
-  const sql = `
-    INSERT INTO holovakner (
-      id,
-      created_at,
-      updated_at,
-      title,
-      description,
-      user_id
-    ) VALUES (
-      ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?
-    )
-  `;
-
-  db.run(sql, [id, params.title, params.description, params.userID]);
-
-  return getHolovak(db, id);
-}
-
-export function getHolovak(db: Database, id: string): Holovak | undefined {
-  const sql = `
-    SELECT
-      id,
-      created_at,
-      updated_at,
-      title,
-      description,
-      thumbnail_url,
-      video_url,
-      user_id
-    FROM holovakner
-    WHERE id = ?
-  `;
-
-  const row = db.query<HolovakRow, [string]>(sql).get(id);
-
-  if (!row) {
-    return;
-  }
-
+function toHolovak(row: HolovakRow): Holovak {
   return {
     id: row.id,
     createdAt: new Date(row.created_at),
@@ -118,33 +46,40 @@ export function getHolovak(db: Database, id: string): Holovak | undefined {
   };
 }
 
-export function updateHolovak(db: Database, holovak: Holovak): void {
-  const sql = `
-    UPDATE holovakner
-    SET
-      title = ?,
-      description = ?,
-      thumbnail_url = ?,
-      video_url = ?,
-      user_id = ?,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `;
+// Newest first — the UI (and the course's tests) rely on this order.
+export function getHolovakner(db: Database, userID: string): Holovak[] {
+  return db
+    .query<HolovakRow, [string]>(`SELECT ${COLUMNS} FROM holovakner WHERE user_id = ? ORDER BY created_at DESC`)
+    .all(userID)
+    .map(toHolovak);
+}
 
-  db.run(sql, [
-    holovak.title,
-    holovak.description,
-    holovak.thumbnailURL ?? null,
-    holovak.videoURL ?? null,
-    holovak.userID,
-    holovak.id,
+export function getHolovak(db: Database, id: string): Holovak | undefined {
+  const row = db.query<HolovakRow, [string]>(`SELECT ${COLUMNS} FROM holovakner WHERE id = ?`).get(id);
+  return row ? toHolovak(row) : undefined;
+}
+
+export function createHolovak(db: Database, params: CreateHolovakParams): Holovak {
+  const id = randomUUID();
+  db.run("INSERT INTO holovakner (id, title, description, user_id) VALUES (?, ?, ?, ?)", [
+    id,
+    params.title,
+    params.description,
+    params.userID,
   ]);
+  return getHolovak(db, id)!;
+}
+
+// Writes back every editable column of an in-memory Holovak (used after an upload sets a URL).
+export function updateHolovak(db: Database, holovak: Holovak): void {
+  db.run(
+    `UPDATE holovakner
+        SET title = ?, description = ?, thumbnail_url = ?, video_url = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`,
+    [holovak.title, holovak.description, holovak.thumbnailURL ?? null, holovak.videoURL ?? null, holovak.id],
+  );
 }
 
 export function deleteHolovak(db: Database, id: string): void {
-  const sql = `
-    DELETE FROM holovakner
-    WHERE id = ?
-  `;
-  db.run(sql, [id]);
+  db.run("DELETE FROM holovakner WHERE id = ?", [id]);
 }

@@ -9,11 +9,6 @@ export type User = {
   password: string;
 };
 
-export type CreateUserParams = {
-  email: string;
-  password: string;
-};
-
 type UserRow = {
   id: string;
   created_at: string;
@@ -22,39 +17,9 @@ type UserRow = {
   password: string;
 };
 
-export function getUsers(db: Database): User[] {
-  const sql = `
-    SELECT *
-    FROM users
-  `;
-  const query = db.query<UserRow, []>(sql);
+const COLUMNS = "id, created_at, updated_at, email, password";
 
-  const users: User[] = [];
-  for (const row of query.iterate()) {
-    users.push({
-      id: row.id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      email: row.email,
-      password: "",
-    });
-  }
-  return users;
-}
-
-export function getUserByEmail(db: Database, email: string): User | undefined {
-  const sql = `
-    SELECT *
-    FROM users
-    WHERE email = ?
-  `;
-
-  const row = db.query<UserRow, [string]>(sql).get(email);
-
-  if (!row) {
-    return;
-  }
-
+function toUser(row: UserRow): User {
   return {
     id: row.id,
     createdAt: new Date(row.created_at),
@@ -64,67 +29,33 @@ export function getUserByEmail(db: Database, email: string): User | undefined {
   };
 }
 
-export function getUserByRefreshToken(
-  db: Database,
-  token: string,
-): User | undefined {
-  const sql = `
-    SELECT u.id, u.email, u.created_at, u.updated_at, u.password
-    FROM users u
-    JOIN refresh_tokens rt ON u.id = rt.user_id
-    WHERE rt.token = ?
-  `;
-
-  const row = db.query<UserRow, [string]>(sql).get(token);
-  if (!row) return;
-
-  return {
-    id: row.id,
-    email: row.email,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
-    password: row.password,
-  };
-}
-
-export function createUser(
-  db: Database,
-  params: CreateUserParams,
-): User | undefined {
-  const newID = randomUUID();
-
-  const sql = `
-    INSERT INTO users (id, created_at, updated_at, email, password)
-    VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
-  `;
-  db.run(sql, [newID, params.email, params.password]);
-
-  return getUser(db, newID);
+export function createUser(db: Database, email: string, passwordHash: string): User {
+  const id = randomUUID();
+  db.run("INSERT INTO users (id, email, password) VALUES (?, ?, ?)", [id, email, passwordHash]);
+  return getUser(db, id)!;
 }
 
 export function getUser(db: Database, id: string): User | undefined {
-  const sql = `
-    SELECT *
-    FROM users
-    WHERE id = ?
-  `;
-  const row = db.query<UserRow, [string]>(sql).get(id);
-
-  if (!row) return;
-
-  return {
-    id: row.id,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
-    email: row.email,
-    password: row.password,
-  };
+  const row = db.query<UserRow, [string]>(`SELECT ${COLUMNS} FROM users WHERE id = ?`).get(id);
+  return row ? toUser(row) : undefined;
 }
 
-export function deleteUser(db: Database, id: string): void {
-  const sql = `
-    DELETE FROM users
-    WHERE id = ?
-  `;
-  db.run(sql, [id]);
+export function getUserByEmail(db: Database, email: string): User | undefined {
+  const row = db.query<UserRow, [string]>(`SELECT ${COLUMNS} FROM users WHERE email = ?`).get(email);
+  return row ? toUser(row) : undefined;
+}
+
+// Resolves the owner of a refresh token, but only while that token is unexpired and unrevoked.
+export function getUserByRefreshToken(db: Database, token: string): User | undefined {
+  const row = db
+    .query<UserRow, [string]>(
+      `SELECT u.id, u.created_at, u.updated_at, u.email, u.password
+         FROM users u
+         JOIN refresh_tokens rt ON rt.user_id = u.id
+        WHERE rt.token = ?
+          AND rt.revoked_at IS NULL
+          AND rt.expires_at > CURRENT_TIMESTAMP`,
+    )
+    .get(token);
+  return row ? toUser(row) : undefined;
 }

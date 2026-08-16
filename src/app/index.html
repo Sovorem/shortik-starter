@@ -4,100 +4,84 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shortik</title>
-    <link rel="stylesheet" href="styles.css" />
-    <script type="module" src="app.js"></script>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.js"></script>
   </head>
   <body>
-    <div class="nav-bar">
-      <h1>
-        Shortik
-        <span class="subtitle">Կարճ հոլովակների #1 հարթակը 🦉</span>
-      </h1>
-      <button id="logout-button">Դուրս գալ</button>
-    </div>
-
-    <div id="auth-section">
-      <h2>Մուտք</h2>
-      <form id="login-form">
-        <input
-          class="input-area"
-          type="email"
-          id="email"
-          placeholder="Email"
-          required
-        />
-        <input
-          class="input-area"
-          type="password"
-          id="password"
-          placeholder="Գաղտնաբառ"
-          required
-        />
-        <div class="button-container">
-          <button type="submit">Մուտք գործել</button>
-          <button id="signup-button" type="button">Գրանցվել (Signup)</button>
-        </div>
-      </form>
-    </div>
-
-    <div id="video-section" style="display: none">
-      <h2>Ստեղծել draft</h2>
-      <form id="video-draft-form">
-        <input
-          class="input-area"
-          type="text"
-          id="video-title"
-          placeholder="Հոլովակի վերնագիր"
-          required
-        />
-        <textarea
-          class="input-area"
-          id="video-description"
-          placeholder="Հոլովակի նկարագրություն"
-          required
-        ></textarea>
-        <div class="button-container">
-          <button type="submit">Ստեղծել draft</button>
-        </div>
-      </form>
-      <h2>Բոլոր հոլովակները</h2>
-      <ul id="video-list"></ul>
-
-      <div id="video-display" style="display: none">
-        <h2>Ընթացիկ հոլովակը՝ <span id="video-title-display"></span></h2>
-        <p id="video-description-display"></p>
-
-        <div class="button-container mb-4">
-          <button id="delete-video">Ջնջել հոլովակը</button>
-        </div>
-
-        <div id="video-upload-forms">
-          <form
-            id="thumbnail-upload-form"
-          >
-            <h3>Թարմացնել thumbnail-ը</h3>
-            <input
-              type="file"
-              id="thumbnail"
-              accept="image/*,application/pdf"
-              required
-            />
-            <button type="submit" id="upload-thumbnail-btn">Վերբեռնել</button>
-            <img id="thumbnail-image" style="display: block" />
-          </form>
-
-          <div id="video-container">
-            <form
-              id="video-file-upload-form"
-            >
-              <h3>Թարմացնել հոլովակի ֆայլը</h3>
-              <input type="file" id="video-file" accept="video/*" required />
-              <button type="submit" id="upload-video-btn">Վերբեռնել</button>
-            </form>
-            <video id="video-player" controls style="display: block"></video>
-          </div>
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-owl" src="./ovo.svg" alt="" width="44" height="44" />
+        <div>
+          <div class="brand-name">Shortik</div>
+          <div class="brand-tagline">Կարճ հոլովակների #1 հարթակը 🦉</div>
         </div>
       </div>
-    </div>
+      <div class="topbar-right">
+        <span id="whoami" class="whoami"></span>
+        <button id="logout-button" class="btn btn-ghost" type="button" hidden>Դուրս գալ</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- signed-out state -->
+      <section id="auth-section" class="card auth-card" hidden>
+        <h2>Մուտք</h2>
+        <form id="login-form" class="stack">
+          <input class="field" id="email" type="email" placeholder="Email" autocomplete="username" required />
+          <input class="field" id="password" type="password" placeholder="Գաղտնաբառ" autocomplete="current-password" required />
+          <div class="row">
+            <button class="btn btn-primary" type="submit">Մուտք գործել</button>
+            <button class="btn" id="signup-button" type="button">Գրանցվել (Signup)</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- signed-in state -->
+      <section id="holovak-section" class="grid" hidden>
+        <aside class="column">
+          <div class="card">
+            <h2>Ստեղծել draft</h2>
+            <form id="draft-form" class="stack">
+              <input class="field" id="draft-title" type="text" placeholder="Հոլովակի վերնագիր" required />
+              <textarea class="field" id="draft-description" rows="3" placeholder="Հոլովակի նկարագրություն" required></textarea>
+              <button class="btn btn-primary" type="submit">Ստեղծել draft</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <h2>Բոլոր հոլովակները</h2>
+            <ul id="holovak-list" class="clip-list"></ul>
+          </div>
+        </aside>
+
+        <section id="holovak-display" class="column" hidden>
+          <div class="card">
+            <div class="clip-head">
+              <div>
+                <h2>Ընթացիկ հոլովակը՝ <span id="holovak-title-display"></span></h2>
+                <p id="holovak-description-display" class="muted"></p>
+              </div>
+              <button id="delete-holovak" class="btn btn-danger" type="button">Ջնջել հոլովակը</button>
+            </div>
+
+            <div class="uploads">
+              <form id="thumbnail-upload-form" class="upload-box">
+                <h3>Թարմացնել thumbnail-ը</h3>
+                <input type="file" id="thumbnail" accept="image/*,application/pdf" required />
+                <button class="btn" id="upload-thumbnail-btn" type="submit">Վերբեռնել</button>
+                <img id="thumbnail-image" class="preview" alt="" hidden />
+              </form>
+
+              <form id="video-upload-form" class="upload-box">
+                <h3>Թարմացնել հոլովակի ֆայլը</h3>
+                <input type="file" id="video-file" accept="video/*" required />
+                <button class="btn" id="upload-video-btn" type="submit">Վերբեռնել</button>
+                <video id="video-player" class="preview" controls playsinline hidden></video>
+              </form>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
   </body>
 </html>

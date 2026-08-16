@@ -1,323 +1,212 @@
-document.addEventListener("DOMContentLoaded", async () => {
-  const token = localStorage.getItem("token");
+// Shortik frontend — a deliberately small vanilla-JS client for the API in src/api.
+// State lives in `state`, every screen change goes through render(), every request through api().
 
-  if (token) {
-    document.getElementById("auth-section").style.display = "none";
-    document.getElementById("video-section").style.display = "block";
-    await getHolovakner();
-  } else {
-    document.getElementById("auth-section").style.display = "block";
-    document.getElementById("video-section").style.display = "none";
+const TOKEN_KEY = "shortik.token";
+const EMAIL_KEY = "shortik.email";
+
+const state = {
+  token: localStorage.getItem(TOKEN_KEY),
+  email: localStorage.getItem(EMAIL_KEY),
+  holovakner: [],
+  current: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------- api helpers
+
+async function api(method, path, { json, form, auth = true } = {}) {
+  const headers = {};
+  if (auth && state.token) headers.Authorization = `Bearer ${state.token}`;
+  let body;
+  if (json !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(json);
+  } else if (form) {
+    body = form;
   }
-});
-
-document
-  .getElementById("video-draft-form")
-  .addEventListener("submit", async (event) => {
-    event.preventDefault();
-    await createHolovakDraft();
-  });
-
-document
-  .getElementById("login-form")
-  .addEventListener("submit", async (event) => {
-    event.preventDefault();
-    await login();
-  });
-
-async function createHolovakDraft() {
-  const title = document.getElementById("video-title").value;
-  const description = document.getElementById("video-description").value;
-
-  try {
-    const res = await fetch("/api/holovakner", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: JSON.stringify({ title, description }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(`Չստացվեց ստեղծել draft-ը: ${data.error}`);
-    }
-
-    const holovakID = data.id;
-    if (holovakID) {
-      await getHolovakner();
-      await holovakStateHandler(holovakID);
-    }
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
+  const res = await fetch(path, { method, headers, body });
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || res.statusText);
   }
+  return data;
 }
 
-async function login() {
-  const email = document.getElementById("email").value;
-  const password = document.getElementById("password").value;
-
-  try {
-    const res = await fetch("/api/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(`Մուտքը չստացվեց: ${data.error}`);
-    }
-
-    if (data.token) {
-      localStorage.setItem("token", data.token);
-      document.getElementById("auth-section").style.display = "none";
-      document.getElementById("video-section").style.display = "block";
-      await getHolovakner();
-    } else {
-      alert("Մուտքը չստացվեց։ Ստուգիր email-ը ու գաղտնաբառը։");
-    }
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
-  }
+function say(message) {
+  alert(message);
 }
 
-async function signup() {
-  const email = document.getElementById("email").value;
-  const password = document.getElementById("password").value;
+// ---------------------------------------------------------------- session
 
-  try {
-    const res = await fetch("/api/users", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(`Չստացվեց ստեղծել user-ը: ${data.error}`);
-    }
-    console.log("User-ը ստեղծվեց!");
-    await login();
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
+async function login(email, password) {
+  const data = await api("POST", "/api/login", { json: { email, password }, auth: false });
+  if (!data.token) {
+    throw new Error("Մուտքը չստացվեց։ Ստուգիր email-ը ու գաղտնաբառը։");
   }
+  state.token = data.token;
+  state.email = email;
+  localStorage.setItem(TOKEN_KEY, data.token);
+  localStorage.setItem(EMAIL_KEY, email);
+  await loadHolovakner();
+  render();
 }
 
 function logout() {
-  localStorage.removeItem("token");
-  document.getElementById("auth-section").style.display = "block";
-  document.getElementById("video-section").style.display = "none";
+  state.token = null;
+  state.email = null;
+  state.holovakner = [];
+  state.current = null;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(EMAIL_KEY);
+  render();
 }
 
-function setUploadButtonState(uploading, selector) {
-  const uploadBtn = document.getElementById(selector);
-  if (uploading) {
-    uploadBtn.textContent = "Վերբեռնում...";
-    uploadBtn.disabled = true;
+// ---------------------------------------------------------------- holovakner
+
+async function loadHolovakner() {
+  state.holovakner = await api("GET", "/api/holovakner");
+}
+
+async function selectHolovak(id) {
+  $("thumbnail").value = "";
+  $("video-file").value = "";
+  state.current = await api("GET", `/api/holovakner/${id}`);
+  render();
+}
+
+async function createDraft(title, description) {
+  const created = await api("POST", "/api/holovakner", { json: { title, description } });
+  await loadHolovakner();
+  await selectHolovak(created.id);
+}
+
+async function deleteCurrent() {
+  if (!state.current) {
+    say("Ջնջելու համար հոլովակ ընտրված չէ։");
     return;
   }
-  uploadBtn.textContent = "Վերբեռնել";
-  uploadBtn.disabled = false;
+  await api("DELETE", `/api/holovakner/${state.current.id}`);
+  say("Հոլովակը հաջողությամբ ջնջվեց։");
+  state.current = null;
+  await loadHolovakner();
+  render();
 }
 
-async function uploadThumbnail(holovakID) {
-  const thumbnailFile = document.getElementById("thumbnail").files[0];
-  if (!thumbnailFile) return;
+async function uploadFile(kind) {
+  // kind: "thumbnail" | "video" — the multipart field name the server expects
+  const input = kind === "thumbnail" ? $("thumbnail") : $("video-file");
+  const button = kind === "thumbnail" ? $("upload-thumbnail-btn") : $("upload-video-btn");
+  const file = input.files[0];
+  if (!file || !state.current) return;
 
-  const formData = new FormData();
-  formData.append("thumbnail", thumbnailFile);
+  const form = new FormData();
+  form.append(kind, file);
+  const path = kind === "thumbnail" ? `/api/thumbnail_upload/${state.current.id}` : `/api/holovak_upload/${state.current.id}`;
 
-  const uploadBtnSelector = "upload-thumbnail-btn";
-  setUploadButtonState(true, uploadBtnSelector);
-
+  button.disabled = true;
+  button.textContent = "Վերբեռնում...";
   try {
-    const res = await fetch(`/api/thumbnail_upload/${holovakID}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: formData,
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(`Thumbnail-ը չվերբեռնվեց։ Error: ${data.error}`);
-    }
-
-    await res.json();
-    console.log("Thumbnail-ը վերբեռնվեց!");
-    await getHolovak(holovakID);
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
-  }
-
-  setUploadButtonState(false, uploadBtnSelector);
-}
-
-async function uploadVideoFile(holovakID) {
-  const videoFile = document.getElementById("video-file").files[0];
-  if (!videoFile) return;
-
-  const formData = new FormData();
-  formData.append("video", videoFile);
-
-  const uploadBtnSelector = "upload-video-btn";
-  setUploadButtonState(true, uploadBtnSelector);
-
-  try {
-    const res = await fetch(`/api/holovak_upload/${holovakID}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: formData,
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(`Հոլովակի ֆայլը չվերբեռնվեց։ Error: ${data.error}`);
-    }
-
-    console.log("Հոլովակը վերբեռնվեց!");
-    await getHolovak(holovakID);
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
-  }
-
-  setUploadButtonState(false, uploadBtnSelector);
-}
-
-const holovakStateHandler = createHolovakStateHandler();
-
-async function getHolovakner() {
-  try {
-    const res = await fetch("/api/holovakner", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(`Չստացվեց բերել հոլովակները։ Error: ${data.error}`);
-    }
-
-    const holovakner = await res.json();
-    const holovakList = document.getElementById("video-list");
-    holovakList.innerHTML = "";
-    for (const holovak of holovakner) {
-      const listItem = document.createElement("li");
-      listItem.textContent = holovak.title;
-      listItem.onclick = () => holovakStateHandler(holovak.id);
-      holovakList.appendChild(listItem);
-    }
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
+    await api("POST", path, { form });
+    say(kind === "thumbnail" ? "Thumbnail-ը վերբեռնվեց!" : "Հոլովակը վերբեռնվեց!");
+    await selectHolovak(state.current.id);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Վերբեռնել";
   }
 }
 
-function createHolovakStateHandler() {
-  let currentHolovakID = null;
+// ---------------------------------------------------------------- render
 
-  return async function handleHolovakClick(holovakID) {
-    if (currentHolovakID !== holovakID) {
-      currentHolovakID = holovakID;
+function render() {
+  const signedIn = Boolean(state.token);
+  $("auth-section").hidden = signedIn;
+  $("holovak-section").hidden = !signedIn;
+  $("logout-button").hidden = !signedIn;
+  $("whoami").textContent = signedIn && state.email ? state.email : "";
+  if (!signedIn) return;
 
-      // Reset file input values
-      document.getElementById("thumbnail").value = "";
-      document.getElementById("video-file").value = "";
+  const list = $("holovak-list");
+  list.innerHTML = "";
+  for (const holovak of state.holovakner) {
+    const li = document.createElement("li");
+    li.textContent = holovak.title;
+    if (state.current && holovak.id === state.current.id) li.classList.add("active");
+    li.onclick = () => selectHolovak(holovak.id).catch((err) => say(`Սխալ՝ <error>`.replace("<error>", err.message)));
+    list.appendChild(li);
+  }
 
-      await getHolovak(holovakID);
+  $("holovak-display").hidden = !state.current;
+  if (state.current) viewHolovak(state.current);
+}
+
+function viewHolovak(holovak) {
+  $("holovak-title-display").textContent = holovak.title;
+  $("holovak-description-display").textContent = holovak.description;
+
+  const thumbnailImg = $("thumbnail-image");
+  thumbnailImg.hidden = !holovak.thumbnailURL;
+  if (holovak.thumbnailURL) {
+    thumbnailImg.src = holovak.thumbnailURL;
+  }
+
+  const videoPlayer = $("video-player");
+  videoPlayer.hidden = !holovak.videoURL;
+  if (holovak.videoURL && videoPlayer.src !== holovak.videoURL) {
+    videoPlayer.src = holovak.videoURL;
+    videoPlayer.load();
+  }
+}
+
+// ---------------------------------------------------------------- wiring
+
+function guard(fn, prefix) {
+  return async (event) => {
+    event?.preventDefault?.();
+    try {
+      await fn();
+    } catch (err) {
+      say(prefix.replace("<error>", err.message));
     }
   };
 }
 
-async function getHolovak(holovakID) {
-  try {
-    const res = await fetch(`/api/holovakner/${holovakID}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-    });
-    if (!res.ok) {
-      throw new Error("Չստացվեց բերել հոլովակը։");
-    }
+$("login-form").addEventListener(
+  "submit",
+  guard(() => login($("email").value, $("password").value), "Մուտքը չստացվեց: <error>"),
+);
 
-    const holovak = await res.json();
-    viewHolovak(holovak);
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
-  }
+$("signup-button").addEventListener(
+  "click",
+  guard(async () => {
+    const email = $("email").value;
+    const password = $("password").value;
+    await api("POST", "/api/users", { json: { email, password }, auth: false });
+    console.log("User-ը ստեղծվեց!");
+    await login(email, password);
+  }, "Չստացվեց ստեղծել user-ը: <error>"),
+);
+
+$("logout-button").addEventListener("click", () => logout());
+
+$("draft-form").addEventListener(
+  "submit",
+  guard(async () => {
+    await createDraft($("draft-title").value, $("draft-description").value);
+    $("draft-form").reset();
+  }, "Չստացվեց ստեղծել draft-ը: <error>"),
+);
+
+$("thumbnail-upload-form").addEventListener("submit", guard(() => uploadFile("thumbnail"), "Thumbnail-ը չվերբեռնվեց։ Error: <error>"));
+$("video-upload-form").addEventListener("submit", guard(() => uploadFile("video"), "Հոլովակի ֆայլը չվերբեռնվեց։ Error: <error>"));
+$("delete-holovak").addEventListener("click", guard(() => deleteCurrent(), "Չստացվեց ջնջել հոլովակը։"));
+
+// first paint: restore the session if there is a token
+if (state.token) {
+  loadHolovakner()
+    .then(render)
+    .catch(() => logout());
+} else {
+  render();
 }
-
-let currentHolovak = null;
-
-function viewHolovak(holovak) {
-  currentHolovak = holovak;
-  document.getElementById("video-display").style.display = "block";
-  document.getElementById("video-title-display").textContent = holovak.title;
-  document.getElementById("video-description-display").textContent =
-    holovak.description;
-
-  const thumbnailImg = document.getElementById("thumbnail-image");
-  if (!holovak.thumbnailURL) {
-    thumbnailImg.style.display = "none";
-  } else {
-    thumbnailImg.style.display = "block";
-    thumbnailImg.src = holovak.thumbnailURL;
-  }
-
-  const videoPlayer = document.getElementById("video-player");
-  if (videoPlayer) {
-    if (!holovak.videoURL) {
-      videoPlayer.style.display = "none";
-    } else {
-      videoPlayer.style.display = "block";
-      videoPlayer.src = holovak.videoURL;
-      videoPlayer.load();
-    }
-  }
-}
-
-async function deleteHolovak() {
-  if (!currentHolovak) {
-    alert("Ջնջելու համար հոլովակ ընտրված չէ։");
-    return;
-  }
-
-  try {
-    const res = await fetch(`/api/holovakner/${currentHolovak.id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-    });
-    if (!res.ok) {
-      throw new Error("Չստացվեց ջնջել հոլովակը։");
-    }
-    alert("Հոլովակը հաջողությամբ ջնջվեց։");
-    document.getElementById("video-display").style.display = "none";
-    await getHolovakner();
-  } catch (error) {
-    alert(`Սխալ՝ ${error.message}`);
-  }
-}
-
-document.getElementById("signup-button").addEventListener("click", signup);
-document.getElementById("logout-button").addEventListener("click", logout);
-document
-  .getElementById("thumbnail-upload-form")
-  .addEventListener("submit", async (event) => {
-    event.preventDefault();
-    await uploadThumbnail(currentHolovak?.id);
-  });
-
-document
-  .getElementById("video-file-upload-form")
-  .addEventListener("submit", async (event) => {
-    event.preventDefault();
-    await uploadVideoFile(currentHolovak?.id);
-  });
-document.getElementById("delete-holovak").addEventListener("click", deleteHolovak);

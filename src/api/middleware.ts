@@ -1,69 +1,33 @@
 import type { BunRequest } from "bun";
 import type { ApiConfig } from "../config";
-import {
-  BadRequestError,
-  NotFoundError,
-  UserForbiddenError,
-  UserNotAuthenticatedError,
-} from "./errors";
+import { HttpError } from "./errors";
 import { respondWithJSON } from "./json";
 
-type HandlerWithConfig = (cfg: ApiConfig, req: BunRequest) => Promise<Response>;
+export type Handler = (cfg: ApiConfig, req: BunRequest) => Response | Promise<Response>;
 
-export function withConfig(cfg: ApiConfig, handler: HandlerWithConfig) {
+// Binds the app config to a handler so Bun.serve can call it with just the request.
+export function withConfig(cfg: ApiConfig, handler: Handler) {
   return (req: BunRequest) => handler(cfg, req);
 }
 
-export function cacheMiddleware(
-  next: (req: Request) => Response | Promise<Response>,
-): (req: Request) => Promise<Response> {
-  return async function (req: Request): Promise<Response> {
+// Wraps a plain fetch-style handler and stamps a Cache-Control header on whatever it returns.
+export function cacheMiddleware(next: (req: Request) => Response | Promise<Response>) {
+  return async (req: Request): Promise<Response> => {
     const res = await next(req);
-    const headers = new Headers(res.headers);
-    headers.set("Cache-Control", "max-age=3600");
-
-    return new Response(res.body, {
-      status: res.status,
-      statusText: res.statusText,
-      headers,
-    });
+    const wrapped = new Response(res.body, res);
+    wrapped.headers.set("Cache-Control", "max-age=3600");
+    return wrapped;
   };
 }
 
-export function errorHandlingMiddleware(
-  cfg: ApiConfig,
-  err: unknown,
-): Response {
-  let statusCode = 500;
-  let message = "Ինչ-որ սխալ տեղի ունեցավ մեր կողմից";
-
-  if (err instanceof BadRequestError) {
-    statusCode = 400;
-    message = err.message;
-  } else if (err instanceof UserNotAuthenticatedError) {
-    statusCode = 401;
-    message = err.message;
-  } else if (err instanceof UserForbiddenError) {
-    statusCode = 403;
-    message = err.message;
-  } else if (err instanceof NotFoundError) {
-    statusCode = 404;
-    message = err.message;
+// Central error → JSON translation. HttpError subclasses keep their status,
+// everything else is a 500 (with the real message only in dev).
+export function errorHandlingMiddleware(cfg: ApiConfig, err: unknown): Response {
+  if (err instanceof HttpError) {
+    return respondWithJSON(err.status, { error: err.message });
   }
-
-  if (statusCode >= 500) {
-    const errStr = errStringFromError(err);
-    if (cfg.platform === "dev") {
-      message = errStr;
-    }
-    console.log(errStr);
-  }
-
-  return respondWithJSON(statusCode, { error: message });
-}
-
-function errStringFromError(err: unknown) {
-  if (typeof err === "string") return err;
-  if (err instanceof Error) return err.message;
-  return "Տեղի ունեցավ անհայտ սխալ";
+  const detail = err instanceof Error ? err.message : String(err);
+  console.error(detail);
+  const message = cfg.platform === "dev" ? detail : "Ինչ-որ սխալ տեղի ունեցավ մեր կողմից";
+  return respondWithJSON(500, { error: message });
 }

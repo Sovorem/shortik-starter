@@ -1,16 +1,16 @@
 {
   "name": "shortik",
-  "module": "/src/index.ts",
-  "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "^1.2.7",
-    "@types/jsonwebtoken": "^9.0.9"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts"
   },
   "dependencies": {
     "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.7",
+    "@types/jsonwebtoken": "^9.0.9",
+    "typescript": "^5"
   }
 }

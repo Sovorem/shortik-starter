@@ -1,5 +1,6 @@
-import { newDatabase } from "./db/db";
 import type { Database } from "bun:sqlite";
+import { mkdirSync } from "fs";
+import { openDatabase } from "./db/db";
 
 export type ApiConfig = {
   db: Database;
@@ -13,34 +14,26 @@ export type ApiConfig = {
   port: string;
 };
 
-const pathToDB = envOrThrow("DB_PATH");
-const jwtSecret = envOrThrow("JWT_SECRET");
-const platform = envOrThrow("PLATFORM");
-const filepathRoot = envOrThrow("FILEPATH_ROOT");
-const assetsRoot = envOrThrow("ASSETS_ROOT");
-const s3Bucket = envOrThrow("S3_BUCKET");
-const s3Region = envOrThrow("S3_REGION");
-const s3CfDistribution = envOrThrow("S3_CF_DISTRO");
-const port = envOrThrow("PORT");
+// Reads a required variable from .env (Bun loads it automatically) and refuses to start without it.
+function env(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`.env: ${name} must be set`);
+  }
+  return value;
+}
 
-const db = newDatabase(pathToDB);
+const assetsRoot = env("ASSETS_ROOT");
+mkdirSync(assetsRoot, { recursive: true });
 
 export const cfg: ApiConfig = {
-  db: db,
-  jwtSecret: jwtSecret,
-  platform: platform,
-  filepathRoot: filepathRoot,
-  assetsRoot: assetsRoot,
-  s3Bucket: s3Bucket,
-  s3Region: s3Region,
-  s3CfDistribution: s3CfDistribution,
-  port: port,
+  db: openDatabase(env("DB_PATH")),
+  jwtSecret: env("JWT_SECRET"),
+  platform: env("PLATFORM"),
+  filepathRoot: env("FILEPATH_ROOT"),
+  assetsRoot,
+  s3Bucket: env("S3_BUCKET"),
+  s3Region: env("S3_REGION"),
+  s3CfDistribution: env("S3_CF_DISTRO"),
+  port: env("PORT"),
 };
-
-function envOrThrow(key: string) {
-  const envVar = process.env[key];
-  if (!envVar) {
-    throw new Error(`${key} must be set`);
-  }
-  return envVar;
-}

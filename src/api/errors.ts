@@ -1,23 +1,35 @@
-export class BadRequestError extends Error {
-  constructor(message: string) {
+// HTTP-aware errors: throw one of these anywhere in a handler and
+// errorHandlingMiddleware turns it into the matching JSON response.
+export class HttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
     super(message);
+    this.name = new.target.name;
+    this.status = status;
   }
 }
 
-export class UserNotAuthenticatedError extends Error {
+export class BadRequestError extends HttpError {
   constructor(message: string) {
-    super(message);
+    super(400, message);
   }
 }
 
-export class UserForbiddenError extends Error {
+export class UserNotAuthenticatedError extends HttpError {
   constructor(message: string) {
-    super(message);
+    super(401, message);
   }
 }
 
-export class NotFoundError extends Error {
+export class UserForbiddenError extends HttpError {
   constructor(message: string) {
-    super(message);
+    super(403, message);
+  }
+}
+
+export class NotFoundError extends HttpError {
+  constructor(message: string) {
+    super(404, message);
   }
 }
